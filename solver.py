@@ -130,6 +130,13 @@ def assign(clauses, A):
 # n is the number of clauses
 # k is the number of variables
 def solve(clauses : list[Clause], n, k):
+    """
+    :param clauses:
+    :param n: num of clauses
+    :param k: num of variables
+    :return: (Assignments(if satisfiable), isSat (true / false)
+    """
+
     #Initialise A to the empty list of assignments
     F = clauses
     A = {}
@@ -157,8 +164,9 @@ def solve(clauses : list[Clause], n, k):
         print("assignment : ", end='')
         printAssignments(A)
 
+        # todo : find out if this way is correct
         assign_result = assign(clauses, A)
-        F = assign_result[0]  # <- fix this : todo
+        F = assign_result[0]  #
 
         print("assign result : ", end="")
         #printClauses(assign_result[0])
