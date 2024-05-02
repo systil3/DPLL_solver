@@ -148,9 +148,6 @@ def solve(clauses : list[Clause], n, k):
 
                 # conflict when the constraint not fits with current A
                 # if in conflict, a learned clause should be added.
-                '''if L.ind in A.keys() and \
-                    (L.isNegation == True and A[L.ind] == True) or \
-                    (L.isNegation == False and A[L.ind] == False):'''
                 A[L.ind] = Assignment(L.ind, False, TYPE_IMPLIED) if L.isNegation \
                     else Assignment(L.ind, True, TYPE_IMPLIED)
                 A[L.ind].setImpliedClause(clause)
