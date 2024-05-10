@@ -3,7 +3,7 @@ import random
 
 TYPE_DECISION = 0
 TYPE_IMPLIED = 1
-
+print_clause = False
 class Literal:
     def __init__(self, ind, isNegation):
         self.ind = ind
@@ -62,10 +62,10 @@ class Clause:
         # set of indexes
         return set(self.literals.keys())
 
-    def makeAssign(self, A : list[Assignment]):
+    def makeAssign(self, A : dict[Assignment]):
 
         ret_literals = copy.deepcopy(self.literals)
-        for i, assign in enumerate(A):
+        for i, assign in A.items():
             # if a variable(index i) is in clause
             if i in self.literals.keys():
                 if (A[i].value == False and self.literals[i].isNegation) \
@@ -141,17 +141,23 @@ def solve(clauses : list[Clause], n, k):
     F = clauses
     A = {}
     order = [] #list of order that the variables' value is allocated
+    ind_lists = [i for i in range(k)]
 
     while True:
         # Unit Propagation.
         # While there is a unit clause {L} in F|A, add L->1 to A.
-        print("clause lists : ")
-        for clause in F:
-            print(clause)
+        print("------------------------------------------------------------")
+
+        if print_clause:
+            print("clause lists : ")
+            for clause in F:
+                print(clause)
 
         for clause in F:
             if clause.isUnitClause():
                 L = list(clause.literals.values())[0]
+                if L.ind in A.keys():
+                    continue
 
                 # conflict when the constraint not fits with current A
                 # if in conflict, a learned clause should be added.
@@ -159,18 +165,20 @@ def solve(clauses : list[Clause], n, k):
                     else Assignment(L.ind, True, TYPE_IMPLIED)
                 A[L.ind].setImpliedClause(clause)
                 order.append(L.ind)
+                print(f"assigning new from unit prop : {L.ind}, {A[L.ind].value}")
 
         # If F|A contains no clauses, stop & output A.
-        print("assignment : ", end='')
-        printAssignments(A)
+        if print_clause:
+            print("assignment : ", end='')
+            printAssignments(A)
 
         # todo : find out if this way is correct
         assign_result = assign(clauses, A)
         F = assign_result[0]  #
 
-        print("assign result : ", end="")
-        #printClauses(assign_result[0])
-        print(f"empty clause : {assign_result[1]} ")
+        if print_clause:
+            print("assign result - ", end="")
+            print(f"empty clause : {assign_result[1]} ")
 
         if assign_result[0] == []:
             print("found satisfying assignment")
@@ -196,13 +204,14 @@ def solve(clauses : list[Clause], n, k):
 
                 # regarding i as from 0 to len(A) only works at the current temporary
                 # decision strategy. todo : find another method when apply other strategy
-                ind = A[i-1].ind
-                if A[i-1].assignmentType == TYPE_DECISION or not Di.isInvolved(ind):
+                item = list(A.values())[i-1]
+                ind = item.ind
+                if item.assignmentType == TYPE_DECISION or not Di.isInvolved(ind):
                     i -= 1
                 # If pi -Ci-> bi is an implied assignment and pi is mentioned in Di+1,
                 # define Di to be a resolvent of Ci and Di+1 with respect to pi.
-                elif A[i-1].assignmentType == TYPE_IMPLIED and Di.isInvolved(ind):
-                    Ci = A[i-1].impliedClause
+                elif item.assignmentType == TYPE_IMPLIED and Di.isInvolved(ind):
+                    Ci = item.impliedClause
                     Di = resolvent(Ci, Di)
                     i -= 1
                 else:
@@ -243,16 +252,14 @@ def solve(clauses : list[Clause], n, k):
         else:
             # temporarily, make a var with the smallest index with random value
             # todo : propose a better strategy
-            decision_ind = 0
-            while True:
+            printAssignments(A)
+            for decision_ind in ind_lists:
                 if decision_ind not in A.keys():
                     rand = random.random()
                     A[decision_ind] = Assignment(decision_ind,
                         True if rand > 0.5 else False, TYPE_DECISION)
+                    print(f"assigning new from strategy : {decision_ind}, {True if rand > 0.5 else False}")
                     order.append(decision_ind)
-                    break
-                decision_ind += 1
-                if decision_ind >= k:
                     break
 
 

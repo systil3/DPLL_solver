@@ -28,11 +28,21 @@ if __name__ == '__main__':
         clause = Clause()
         for j in indexes:
             clause.addLiteral(
-                Literal(abs(int(j)), True if j[0] == '-' else False))
+                Literal(abs(int(j))-1, True if j[0] == '-' else False))
         Formula.append(clause)
 
-    for i in range(4000):
-        solve_result = solve(Formula, n, k)
-        solution = solve_result[0]
-        #assert solve_result[1] == True
-        printAssignments(solution)
+
+    solve_result = solve(Formula, n, k)
+    solution = solve_result[0]
+    #assert solve_result[1] == True
+
+    s = "SATISFIABLE" if solve_result[1] else "UNSATISFIABLE"
+    print(f"s {s}")
+    if s == "SATISFIABLE":
+        print("v ", end='')
+        ret = ""
+        for assignment in solution.values():
+            if assignment.value == False:
+                ret += str(assignment.ind+1) + " "
+        print(f"{ret}0")
+    sys.exit(0)
