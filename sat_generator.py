@@ -32,10 +32,10 @@ def save_sat_input(sat_input, filename):
         file.write(sat_input)
 
 # Example usage
-num_variables = 25
-num_clauses = 500
-directory = './sat_inputs/'
-for i in range(50):
+num_variables = 10
+num_clauses = 200
+directory = './sat_inputs_small/'
+for i in range(10):
     filename = f"input_{num_variables}vars_{num_clauses}clauses_{i}.cnf"
     sat_input = generate_sat_input(num_variables, num_clauses)
     save_sat_input(sat_input, directory + filename)

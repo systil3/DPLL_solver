@@ -1,6 +1,8 @@
 from solver import *
 import sys
+import os
 
+BATCH = 1000
 def read_cnf_from_file(filename):
     with open(filename, 'r') as file:
         comments = ""
@@ -29,7 +31,7 @@ def read_cnf_from_file(filename):
             #assert line[-1] == '0\n'
             indexes.sort(key=lambda x: abs(int(x)))
 
-            clause = Clause()
+            clause = Clause(cid=i, parentid=i)
             for j in indexes:
                 clause.addLiteral(
                     Literal(abs(int(j)) - 1, True if j[0] == '-' else False))
@@ -44,6 +46,7 @@ if __name__ == '__main__':
 
     filename = sys.argv[1]
     Formula, n, k = read_cnf_from_file(filename)
+    start_time = time.time()
 
     for i in range(1):
         solve_result = solve(Formula, n, k)
@@ -58,4 +61,10 @@ if __name__ == '__main__':
             for assignment in solution.values():
                 if assignment.value == False:
                     ret += str(assignment.ind+1) + " "
-            print(f"{ret}0")
+            print(f"{ret}0\n")
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    print(f"total computation time ({BATCH} iterations):", round(elapsed_time, 3), "sec")
+    print(f"average computation time : {round(elapsed_time / BATCH, 3)} sec")
