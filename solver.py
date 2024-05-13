@@ -1,15 +1,20 @@
 import copy
 import random
+import threading
 import time
 
 TYPE_DECISION = 0
 TYPE_IMPLIED = 1
 print_clause = False
+print_assign = False
 DECISION_NAIVE = 0
+DECISION_MULTITHREAD = 5
 DECISION_GREEDY_APPEARANCE = 1
 DECISION_GREEDY_SIZE = 2
 DECISION_DFS = 3
-DECISION_MODE = 3
+DECISION_RESTART = 4
+
+DECISION_MODE = 4
 
 num_of_clauses = -1
 
@@ -17,7 +22,8 @@ decisions = {
     0: 'naive' ,
     1: 'greedy_appearance' ,
     2: 'greedy_size',
-    3: 'dfs'
+    3: 'dfs' ,
+    4: 'restart'
 }
 
 class Literal:
@@ -244,6 +250,14 @@ def solve(clauses : list[Clause], n, k):
     tree = SearchTree()
     tree_pos = tree.head # for dfs method
 
+    recent_buffer_size = n // 5
+    recent_buffer = []
+    recent_avg = 0
+    conflict_buffer = []
+    conflict_buffer_size = 24
+    minimal_conflict_level = 4
+    minimal_conflict_number = 0
+
     while True:
         # Unit Propagation.
         # While there is a unit clause {L} in F|A, add L->1 to A.
@@ -287,6 +301,10 @@ def solve(clauses : list[Clause], n, k):
                         tree_pos.setInd(L.ind)
                         newnode = Node()
                         is_left = not L.isNegation
+
+                        # assert (not is_left) or (tree_pos.left is None)
+                        # assert is_left or (tree_pos.right is None)
+
                         if is_left:
                             tree_pos.setObsoleteFalse()
                             if tree_pos.obsoleteTrue:
@@ -298,9 +316,18 @@ def solve(clauses : list[Clause], n, k):
                         tree_pos.connect(newnode, is_left= is_left)
                         tree_pos = newnode
 
-                    print(f"assigning new from unit prop : {L.ind}, {A[L.ind].value}")
+                    if DECISION_MODE == DECISION_RESTART:
+                        value = A[L.ind].value
+                        if len(recent_buffer) < recent_buffer_size:
+                            recent_buffer.append(value)
+                        else:
+                            recent_buffer = recent_buffer[1:] + [value]
+                            recent_avg += (value - recent_buffer[0]) / recent_buffer_size
 
-                    F, is_conflict, conflict_clauses = assign(F, clauses, A)
+                    if print_assign:
+                        print(f"assigning new from unit prop : {L.ind}, {A[L.ind].value}")
+
+                    F, is_conflict, conflict_clauses = assign(clauses, clauses, A)
                     # if not conflict and no clause returned from assignment, return A.
                     if F == [] and is_conflict == False:
                         print("found satisfying assignment")
@@ -330,6 +357,16 @@ def solve(clauses : list[Clause], n, k):
 
             i = len(A)
             Di = conflict_clauses[0]
+
+            if DECISION_MODE == DECISION_RESTART:
+                conflict_level = len(order)
+                if len(conflict_buffer) < conflict_buffer_size:
+                    minimal_conflict_number += int(conflict_level < minimal_conflict_level)
+                    conflict_buffer.append(conflict_level)
+                else:
+                    minimal_conflict_number += int(conflict_level < minimal_conflict_level) \
+                                                - int(conflict_buffer[0] < minimal_conflict_level)
+                    conflict_buffer = conflict_buffer[1:] + [conflict_level]
 
             while i > 0:
                 # D means Di+1 in this loop
@@ -362,6 +399,7 @@ def solve(clauses : list[Clause], n, k):
             num_of_clauses += 1
             learned_clause.cid = num_of_clauses
             learned_clause.parentid = num_of_clauses
+            # add learned clause
             clauses.append(learned_clause)
 
             # Go back to the last moment when all other variables of D1 was
@@ -372,7 +410,6 @@ def solve(clauses : list[Clause], n, k):
             print(f"order : {order}")
 
             learned_inds = learned_clause.getIndexOfLiterals()
-            print(learned_inds)
             l = len(learned_inds)
 
             # backtracking in tree. todo
@@ -382,18 +419,18 @@ def solve(clauses : list[Clause], n, k):
                 tree_pos = tree_pos.parent
                 if A[order[-1]].value == True:
                     tree_pos.setObsoleteTrue()
+                    print(f"the left section of node {tree_pos.ind} is now obsolete")
                 else:
                     tree_pos.setObsoleteFalse()
-                cnt = 0
-                while cnt < 2:
+                    print(f"the right section of node {tree_pos.ind} is now obsolete")
+
+                while True:
+                    print(f"current tree pos : {tree_pos.ind}")
                     assert tree_pos != tree.head
                     assert tree_pos.ind is not None
-                    tree_pos = tree_pos.parent
-
                     if tree_pos.ind in learned_inds:
-                        cnt += 1
-
-                tree_pos = tree_pos.parent
+                        break
+                    tree_pos = tree_pos.parent
 
             if l != 1:
                 for i, order_ind in enumerate(order):
@@ -406,7 +443,9 @@ def solve(clauses : list[Clause], n, k):
                 i = order.index(list(learned_inds)[0])
                 remove_inds = order[i:]
 
-            print(f"removed variable {remove_inds} from A to go to unit propagation")
+            if DECISION_MODE != DECISION_DFS:
+                print(f"removed variable {remove_inds} from A to go to unit propagation")
+
             # remove some variable allocation from assignment
             # to make D1 a unit clause
 
@@ -421,7 +460,7 @@ def solve(clauses : list[Clause], n, k):
         else:
             # if not in conflict nor successful, make a decision
             print("enter decision strategy")
-            printAssignments(A)
+            #printAssignments(A)
             if DECISION_MODE == DECISION_NAIVE:
                 # naive : make a var with the smallest index with random value
                 # todo : propose a better strategy
@@ -431,7 +470,8 @@ def solve(clauses : list[Clause], n, k):
                         A[decision_ind] = Assignment(decision_ind,
                             True if rand > 0.5 else False, TYPE_DECISION)
 
-                        print(f"assigning new from strategy : {decision_ind}, {True if rand > 0.5 else False}")
+                        if print_assign:
+                            print(f"assigning new from strategy : {decision_ind}, {True if rand > 0.5 else False}")
                         order.append(decision_ind)
                         break
 
@@ -449,7 +489,8 @@ def solve(clauses : list[Clause], n, k):
                             newnode = Node()
                             is_left = rand > 0.5
                             tree_pos.connect(newnode, is_left = is_left)
-                            print(f"assigning new from strategy : {decision_ind}, {is_left}")
+                            if print_assign:
+                                print(f"assigning new from strategy : {decision_ind}, {is_left}")
                             tree_pos = newnode
                             order.append(decision_ind)
                             break
@@ -467,7 +508,8 @@ def solve(clauses : list[Clause], n, k):
                         A[decision_ind] = Assignment(decision_ind, True, TYPE_DECISION)
                     is_left = A[decision_ind].value
                     tree_pos.connect(newnode, is_left= is_left)
-                    print(f"assigning new from strategy : {decision_ind}, {is_left}")
+                    if print_assign:
+                        print(f"assigning new from strategy : {decision_ind}, {is_left}")
                     tree_pos = newnode
                     order.append(decision_ind)
 
@@ -484,8 +526,9 @@ def solve(clauses : list[Clause], n, k):
                                 normal_app += 1
                             if remain_clause.getSign(decision_ind) == -1:
                                 neg_app += 1
+                        rand = random.random()
                         A[decision_ind] = Assignment(decision_ind,
-                            True if normal_app >= neg_app else False, TYPE_DECISION)
+                                True if rand < normal_app / (normal_app+neg_app) else False, TYPE_DECISION)
                         order.append(decision_ind)
                         break
 
@@ -498,5 +541,43 @@ def solve(clauses : list[Clause], n, k):
                     A[decision_ind] = Assignment(decision_ind,
                             True if not decision_lit.isNegation else False, TYPE_DECISION)
                     order.append(decision_ind)
+
+            elif DECISION_MODE == DECISION_RESTART:
+                rand = random.random()
+                value = rand > (recent_avg if recent_buffer != [] else 0.5)
+                if len(recent_buffer) < recent_buffer_size:
+                    for decision_ind in ind_lists:
+                        if decision_ind not in A.keys():
+                            A[decision_ind] = Assignment(decision_ind, value, TYPE_DECISION)
+                            if print_assign:
+                                print(f"assigning new from strategy : {decision_ind}, {value}")
+                            order.append(decision_ind)
+                            recent_buffer.append(value)
+                            recent_avg = sum(recent_buffer) / recent_buffer_size
+                            break
+                else:
+                    recent_buffer = recent_buffer[1:] + [value]
+                    recent_avg += (value - recent_buffer[0]) / recent_buffer_size
+                    variance = sum((x - recent_avg) ** 2 for x in recent_buffer) / len(recent_buffer)
+
+                    to_restart = False
+                    # have to restart when low variance
+                    if variance < (50 * k) / n:
+                        print(f"restarting search due to low variance")
+                        to_restart = True
+                    if minimal_conflict_number > conflict_buffer_size * 0.5:
+                        print(f"restarting search due to many low level conflicts")
+                        to_restart = True
+
+                    if to_restart:
+                        # should flush everything
+
+                        F = copy.deepcopy(clauses)
+                        A = {}
+                        order = []
+                        recent_buffer = []
+                        conflict_buffer = []
+                        minimal_conflict_number = 0
+
 
 
