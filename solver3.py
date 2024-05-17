@@ -2,7 +2,7 @@ from solver import *
 import sys
 import os
 
-BATCH = 1000
+BATCH = 10
 def read_cnf_from_file(filename):
     with open(filename, 'r') as file:
         comments = ""
@@ -31,10 +31,11 @@ def read_cnf_from_file(filename):
             #assert line[-1] == '0\n'
             indexes.sort(key=lambda x: abs(int(x)))
 
-            clause = Clause(cid=i, parentid=i)
+            clause = Clause(literals=None, cid=i, parentid=i)
             for j in indexes:
-                clause.addLiteral(
-                    Literal(abs(int(j)) - 1, True if j[0] == '-' else False))
+                #clause.addLiteral(
+                #    Literal(abs(int(j)) - 1, True if j[0] == '-' else False))
+                clause.addLiteral( (abs(int(j)) - 1, True if j[0] == '-' else False))
             Formula.append(clause)
 
         return Formula, n, k
@@ -48,8 +49,8 @@ if __name__ == '__main__':
     Formula, n, k = read_cnf_from_file(filename)
     start_time = time.time()
 
-    for i in range(1):
-        solve_result = solve(Formula, n, k)
+    for i in range(BATCH):
+        solve_result = solve(Formula.copy(), n, k)
         solution = solve_result[0]
         #assert solve_result[1] == True
 
@@ -67,4 +68,4 @@ if __name__ == '__main__':
     elapsed_time = end_time - start_time
 
     print(f"total computation time ({BATCH} iterations):", round(elapsed_time, 3), "sec")
-    print(f"average computation time : {round(elapsed_time / BATCH, 3)} sec")
+    print(f"average : {elapsed_time / BATCH}")

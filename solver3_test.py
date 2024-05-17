@@ -1,12 +1,15 @@
-from solver import *
-import sys
+import asyncio
+import aiofiles
 import os
+import time
+from solver import *
 
 BATCH = 10
-def read_cnf_from_file(filename):
-    with open(filename, 'r') as file:
+
+async def read_cnf_from_file(filename):
+    async with aiofiles.open(filename, 'r') as file:
         comments = ""
-        lines = file.readlines()
+        lines = await file.readlines()
         comment_len = 0
         for line in lines:
             line = line.split(" ")
@@ -29,28 +32,23 @@ def read_cnf_from_file(filename):
             # increasing order (by abs)
             indexes = line[:-1]
             indexes.sort(key=lambda x: abs(int(x)))
-
-            clause = Clause(cid=i, parentid=i)
+            clause = Clause(literals=None, cid=i, parentid=i)
             for j in indexes:
-                clause.addLiteral(
-                    Literal(abs(int(j)) - 1, True if j[0] == '-' else False))
+                clause.addLiteral((abs(int(j)) - 1, True if j[0] == '-' else False))
             Formula.append(clause)
 
         return Formula, n, k
 
-if __name__ == '__main__':
-    directory = './sat_inputs_small'
+async def process_files(directory):
     files = os.listdir(directory)
     start_time = time.time()
 
     for filename in files:
-        Formula, n, k = read_cnf_from_file(directory + '/' + filename)
-
+        Formula, n, k = await read_cnf_from_file(directory + '/' + filename)
+        print(f"testing file {filename}")
         for i in range(BATCH):
-            solve_result = solve(Formula, n, k)
+            solve_result = solve(Formula.copy(), n, k)
             solution = solve_result[0]
-            #assert solve_result[1] == True
-
             s = "SATISFIABLE" if solve_result[1] else "UNSATISFIABLE"
             print(f"s {s}")
             if s == "SATISFIABLE":
@@ -60,8 +58,13 @@ if __name__ == '__main__':
                     if assignment.value == False:
                         ret += str(assignment.ind+1) + " "
                 print(f"{ret}0")
+
     end_time = time.time()
     elapsed_time = end_time - start_time
 
     print(f"total computation time ({len(files) * BATCH} iterations):", round(elapsed_time, 3), "sec")
     print(f"average computation time : {round(elapsed_time / (len(files) * BATCH), 3)} sec")
+
+if __name__ == '__main__':
+    directory = './sat_inputs_small'
+    asyncio.run(process_files(directory))
