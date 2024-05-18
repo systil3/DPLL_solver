@@ -1,3 +1,4 @@
+import concurrent
 import copy
 import random
 import threading
@@ -17,7 +18,7 @@ DECISION_RESTART = 4
 
 DECISION_ALL = 10
 
-DECISION_MODE = 5
+DECISION_MODE = 0
 
 num_of_clauses = -1
 
@@ -30,17 +31,6 @@ decisions = {
     5: 'opposite',
     10: 'everything'
 }
-
-class Literal:
-    def __init__(self, ind, isNegation):
-        self.ind = ind
-        self.isNegation = isNegation
-
-    def __eq__(self, other):
-        return self.ind == other.ind and self.isNegation == other.isNegation
-
-    def __cmp__(self, other):
-        return self.ind >= other.ind
 class Assignment:
     def __init__(self, ind, value, assignmentType):
         self.ind = ind
@@ -57,13 +47,13 @@ def printAssignments(A):
     ret = ""
     for a in A.values():
         if a.value == True:
-            ret += f"p{a.ind+1} : 1, "
+            ret += f"p{a.ind} : 1, "
         else:
-            ret += f"p{a.ind+1} : 0, "
+            ret += f"p{a.ind} : 0, "
     print(ret.rstrip(","))
 
 class Clause:
-    def __init__(self, literals : dict[int, Literal] = None, cid = -1, parentid = -1):
+    def __init__(self, literals, cid, parentid):
         # {index : literal} structure
         self.literals = {} if literals is None else literals
         # used in memorial for unit propagation
@@ -73,16 +63,17 @@ class Clause:
         # parent should be a cid of original clause.
         # else (if from original input), cid == parent.
         self.parentid = parentid
+        self.length = len(self.literals) if literals is not None else 0
 
     def __str__(self):
         ret = ""
         for l in self.literals.values():
-            pre = "~" if l.isNegation else ""
-            ret += f"{pre}{l.ind+1}, "
+            pre = "~" if l[1] else ""
+            ret += f"{pre}{l[0]}, "
         return ret.rstrip(",") + "|"
 
     def isUnitClause(self):
-        return len(self.literals.keys()) == 1
+        return self.length == 1
 
     def isEmpty(self):
         return self.literals == {}
@@ -93,26 +84,27 @@ class Clause:
     def getSign(self, ind):
         if ind not in self.literals.keys():
             return 0
-        return -1 if self.literals[ind].isNegation else 1
+        return -1 if self.literals[ind][1] else 1
 
     def getSize(self):
-        return len(self.literals.keys())
-
+        if self.literals is None:
+            return 0
+        else:
+            return len(self.literals.keys())
     def __cmp__(self, other):
         return self.getSize() >= other.getSize()
-
     def getIndexOfLiterals(self):
         # set of indexes
         return set(self.literals.keys())
 
-    def makeAssign(self, A : dict[Assignment]):
+    def makeAssign(self, A : dict[int, (int, bool)]):
         ret_literals = self.literals.copy()
         for i, assignment in A.items():
             # if a variable(index i) is in clause
             if i in self.literals.keys():
                 assert assignment.value is not None
-                if (assignment.value == False and self.literals[i].isNegation) \
-                        or (assignment.value == True and not self.literals[i].isNegation):
+                if (assignment.value == False and self.literals[i][1]) \
+                        or (assignment.value == True and not self.literals[i][1]):
                     return None, True
                 else:
                     ret_literals.pop(i)
@@ -123,9 +115,16 @@ class Clause:
         # return remaining variables
         return Clause(ret_literals, cid=-1, parentid=self.parentid), True
 
-    def addLiteral(self, l : Literal):
+    def addLiteral(self, l : (int, bool)):
         #assert l not in self.getIndexOfLiterals() #todo
-        self.literals[l.ind] = l
+        self.literals[l[0]] = l
+
+    def removeLiteral(self, index):
+        if index in self.literals.keys():
+            del self.literals[index]
+            self.length -= 1
+        else:
+            raise KeyError
 
 def printClauses(clauses):
     print("".join(map(str, clauses)))
@@ -138,24 +137,24 @@ def find_clause_with_cid(clauses : list[Clause], cid):
 
     raise KeyError
 
-def resolvent(c1 : Clause, c2 : Clause):
+def resolvent(c1 : Clause, c2 : Clause, ind):
     l1 = c1.getIndexOfLiterals()
     l2 = c2.getIndexOfLiterals()
     # common indexes - should be size 1
     # else, resolution cannot be defined
     intersect = l1 & l2
-    #print(f"resolution : {c1} and {c2}")
+    #print(f"resolution : {c1} and {c2} for variable {ind}")
 
     comp = set()
     for i in intersect:
         assert c1.isInvolved(i) and c2.isInvolved(i)
-        if c1.literals[i].isNegation != c2.literals[i].isNegation:
+        if c1.literals[i][1] != c2.literals[i][1]:
             comp.add(i)
     assert len(comp) == 1
 
     # exclude complementary literals
     # include common literals only once
-    c = Clause()
+    c = Clause(literals=None, cid=-1, parentid=c1.parentid)
     for l in l1 - comp:
         c.addLiteral(c1.literals[l])
     for l in l2 - intersect:
@@ -168,7 +167,7 @@ def assign(F, clauses, A):
     is_conflict = False
     conflict_clauses = []
 
-    for clause in clauses:
+    for clause in F:
         ret_clause = clause.makeAssign(A)
         if ret_clause == (None, False):
             #when conflict
@@ -195,13 +194,12 @@ def solve(clauses : list[Clause], n, k):
     """
 
     print(f"Starting to solve SAT with method {decisions[DECISION_MODE]}...")
-
     #Initialise A to the empty list of assignments
     global num_of_clauses
-    F = clauses[:]
+    F = copy.deepcopy(clauses)
     A = {}
     order = [] # list of order that the variables' value is allocated
-    free_inds = [i for i in range(k)] # list of all variable indices which is not allocated.
+    free_inds = set([i for i in range(k)]) # list of all variable indices which is not allocated.
     former_states = [None for i in range(k+1)] # former state memory, for opposite method
     num_of_clauses = n
 
@@ -216,65 +214,75 @@ def solve(clauses : list[Clause], n, k):
     while True:
         # Unit Propagation.
         # While there is a unit clause {L} in F|A, add L->1 to A.
-        print("------------------------------------------------------------")
+        if print_process:
+            print("------------------------------------------------------------")
+
+        F, is_conflict, conflict_clauses = assign(F, clauses, A)
 
         if print_clause:
             print("clause lists : ")
             for clause in F:
                 print(clause)
 
-        # should consider no unit prop
-        F, is_conflict, conflict_clauses = assign(F, clauses, A)
         if F == [] and is_conflict == False:
             print("found satisfying assignment")
             return A, True
 
+        # unit propagation.
         while not is_conflict:
-            has_unit_clause = False
-            random.shuffle(F)
+            #random.shuffle(F)
+
+            unit_clause_stack = []
+            unit_clause_lits = {}
             for clause in F:
                 if clause.isUnitClause():
-                    L = list(clause.literals.values())[0]
-                    has_unit_clause = True
-                    assert L.ind not in A.keys()
+                    unit_lit = list(clause.literals.values())[0]
+                    if not unit_lit[0] in unit_clause_lits.keys():
+                        unit_clause_lits[unit_lit[0]] = unit_lit[1]
+                        unit_clause_stack.append(clause)
 
-                    if clause.cid == -1:
-                        parent = find_clause_with_cid(clauses, clause.parentid)
+            while unit_clause_stack:
+                clause = unit_clause_stack.pop(-1)
+                L = list(clause.literals.values())[0]
+                ind = L[0]
+
+                parent = find_clause_with_cid(clauses, clause.parentid)
+                assert ind not in A.keys()
+                assert parent.isInvolved(ind)
+
+                # conflict when the constraint not fits with current A
+                # if in conflict, a learned clause should be added.
+                A[ind] = Assignment(ind, False, TYPE_IMPLIED) if L[1] \
+                    else Assignment(ind, True, TYPE_IMPLIED)
+                A[ind].setImpliedClause(parent) #todo. is this right?
+                if print_assign:
+                    print(f"assigning new from unit prop : {ind}, {A[ind].value}")
+
+                value = A[ind].value
+                order.append(ind)
+                free_inds.remove(ind)
+                former_states[ind] = value
+
+                if DECISION_MODE == DECISION_RESTART or DECISION_MODE == DECISION_ALL:
+                    if len(recent_buffer) < recent_buffer_size:
+                        recent_buffer.append(value)
                     else:
-                        parent = clause
+                        recent_buffer = recent_buffer[1:] + [value]
+                        recent_avg += (value - recent_buffer[0]) / recent_buffer_size
 
-                    # conflict when the constraint not fits with current A
-                    # if in conflict, a learned clause should be added.
-                    A[L.ind] = Assignment(L.ind, False, TYPE_IMPLIED) if L.isNegation \
-                        else Assignment(L.ind, True, TYPE_IMPLIED)
-                    A[L.ind].setImpliedClause(parent)
-                    if print_assign:
-                        print(f"assigning new from unit prop : {L.ind}, {A[L.ind].value}")
+                F, is_conflict, conflict_clauses = assign(clauses, clauses, A)
+                # if not conflict and no clause returned from assignment, return A.
+                if F == [] and is_conflict == False:
+                    print("found satisfying assignment")
+                    return A, True
 
-                    value = A[L.ind].value
-                    order.append(L.ind)
-                    free_inds.remove(L.ind)
-                    former_states[L.ind] = value
-
-                    if DECISION_MODE == DECISION_RESTART or DECISION_MODE == DECISION_ALL:
-                        if len(recent_buffer) < recent_buffer_size:
-                            recent_buffer.append(value)
-                        else:
-                            recent_buffer = recent_buffer[1:] + [value]
-                            recent_avg += (value - recent_buffer[0]) / recent_buffer_size
-
-                    F, is_conflict, conflict_clauses = assign(clauses, clauses, A)
-                    # if not conflict and no clause returned from assignment, return A.
-                    if F == [] and is_conflict == False:
-                        print("found satisfying assignment")
-                        return A, True
-                    if is_conflict == True:
-                        if print_process:
-                            print("conflict occurred from assigning")
-                    break
+                if is_conflict:
+                    if print_process:
+                        print("conflict occurred from assigning")
+                break
 
             #repeat until F has no unit clause
-            if not has_unit_clause:
+            if not unit_clause_stack:
                 if print_process:
                     print("unit propagation complete, with no conflict")
                 break
@@ -311,12 +319,13 @@ def solve(clauses : list[Clause], n, k):
                                                 - int(conflict_buffer[0] < minimal_conflict_level)
                     conflict_buffer = conflict_buffer[1:] + [conflict_level]
 
+            values = list(A.values())
             while i > 0:
                 # D means Di+1 in this loop
                 # If pi -> bi is a decision assignment or pi is not mentioned in Di+1,
                 # set Di = Di+1.
 
-                item = list(A.values())[i-1]
+                item = values[i-1]
                 ind = item.ind
                 if item.assignmentType == TYPE_DECISION or not Di.isInvolved(ind):
                     i -= 1
@@ -324,7 +333,8 @@ def solve(clauses : list[Clause], n, k):
                 # define Di to be a resolvent of Ci and Di+1 with respect to pi.
                 elif item.assignmentType == TYPE_IMPLIED and Di.isInvolved(ind):
                     Ci = item.impliedClause
-                    Di = resolvent(Ci, Di)
+                    assert Ci.isInvolved(ind)
+                    Di = resolvent(Ci, Di, ind)
                     i -= 1
                 else:
                     raise ValueError
@@ -378,7 +388,7 @@ def solve(clauses : list[Clause], n, k):
 
             assert remove_inds is not None
             for remove_ind in remove_inds:
-                free_inds.append(remove_ind)
+                free_inds.add(remove_ind)
                 order.pop(-1)
                 A.pop(remove_ind)
 
@@ -390,43 +400,57 @@ def solve(clauses : list[Clause], n, k):
             if print_process:
                 print("enter decision strategy")
             #printAssignments(A)
-            if DECISION_MODE == DECISION_NAIVE:
+            if DECISION_MODE in (DECISION_NAIVE, DECISION_GREEDY_SIZE, DECISION_OPPOSITE):
                 # naive : make a var with the random free index with random value
                 # todo : propose a better strategy
-                decision_ind = random.choice(free_inds)
+                decision_ind = random.sample(sorted(free_inds), 1)[0]
                 assert decision_ind not in A.keys()
-                rand = random.random()
-                value = rand > 0.5
-                A[decision_ind] = Assignment(decision_ind, value, TYPE_DECISION)
 
-                if print_assign:
-                    print(f"assigning new from strategy : {decision_ind}, {value}")
-                order.append(decision_ind)
-                free_inds.remove(decision_ind)
-                former_states[decision_ind] = value
-
-            elif DECISION_MODE == DECISION_OPPOSITE:
-                decision_ind = random.choice(free_inds)
-                assert decision_ind not in A.keys()
-                if former_states[decision_ind] is not None:
-                    value = not former_states[decision_ind]
-                else:
+                if DECISION_MODE == DECISION_NAIVE:
                     rand = random.random()
                     value = rand > 0.5
+                    A[decision_ind] = Assignment(decision_ind, value, TYPE_DECISION)
+                elif DECISION_MODE == DECISION_GREEDY_SIZE:
+                    # greedy : select the remaining clause with minimal size
+                    # and make all the variable's value according to the sign of it in the clause
+                    F.sort(key=lambda c : c.getSize())
+                    min_clause = F[0]
+                    decision_ind = random.choice(list(min_clause.getIndexOfLiterals()))
+                    decision_lit = min_clause.literals[decision_ind]
+                    value = not decision_lit[1]
+                    A[decision_ind] = Assignment(decision_ind, value, TYPE_DECISION)
 
-                A[decision_ind] = Assignment(decision_ind, value, TYPE_DECISION)
+                elif DECISION_MODE == DECISION_OPPOSITE:
+                    if former_states[decision_ind] is not None:
+                        value = not former_states[decision_ind]
+                    else:
+                        rand = random.random()
+                        value = rand > 0.5
+                    A[decision_ind] = Assignment(decision_ind, value, TYPE_DECISION)
+
                 if print_assign:
                     print(f"assigning new from strategy : {decision_ind}, {value}")
                 order.append(decision_ind)
                 free_inds.remove(decision_ind)
                 former_states[decision_ind] = value
+
+                to_restart = random.random() < 0.2
+                if to_restart and is_conflict:
+                    # should flush everything
+                    F = clauses[:]
+                    A = {}
+                    order = []
+                    free_inds = set([i for i in range(k)])
+                    recent_buffer = []
+                    conflict_buffer = []
+                    minimal_conflict_number = 0
 
             # ----------------- todo. modify these to fit the tree structure ---------------------
 
             elif DECISION_MODE == DECISION_GREEDY_APPEARANCE:
                 # greedy : make true when normal appearance > negation appearance
                 # make false when opposite situation
-                decision_ind = random.choice(free_inds)
+                decision_ind = random.sample(sorted(free_inds), 1)[0]
                 assert decision_ind not in A.keys()
                 normal_app, neg_app = 0, 0
                 for remain_clause in F:
@@ -441,20 +465,8 @@ def solve(clauses : list[Clause], n, k):
                 free_inds.remove(decision_ind)
                 former_states[decision_ind] = value
 
-            elif DECISION_MODE == DECISION_GREEDY_SIZE:
-                # greedy : select the remaining clause with minimal size
-                # and make all the variable's value according to the sign of it in the clause
-                min_clause = F[0]
-                for decision_lit in min_clause.literals.values():
-                    decision_ind = decision_lit.ind
-                    A[decision_ind] = Assignment(decision_ind,
-                            True if not decision_lit.isNegation else False, TYPE_DECISION)
-                    order.append(decision_ind)
-                    free_inds.remove(decision_ind)
-                    former_states[decision_ind] = value
-
             elif DECISION_MODE == DECISION_RESTART:
-                decision_ind = random.choice(free_inds)
+                decision_ind = random.sample(sorted(free_inds), 1)[0]
                 assert decision_ind not in A.keys()
                 if former_states[decision_ind] is not None:
                     value = not former_states[decision_ind]
@@ -494,7 +506,7 @@ def solve(clauses : list[Clause], n, k):
                         F = clauses[:]
                         A = {}
                         order = []
-                        free_inds = [i for i in range(k)]
+                        free_inds = set([i for i in range(k)])
                         recent_buffer = []
                         conflict_buffer = []
                         minimal_conflict_number = 0

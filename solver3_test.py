@@ -4,7 +4,7 @@ import os
 import time
 from solver import *
 
-BATCH = 10
+BATCH = 2
 
 async def read_cnf_from_file(filename):
     async with aiofiles.open(filename, 'r') as file:
@@ -25,7 +25,7 @@ async def read_cnf_from_file(filename):
                 break
 
         Formula = []
-        for i in range(n-1):
+        for i in range(n):
             line = lines[i + comment_len]
             line = line.split(" ")
 
@@ -66,5 +66,5 @@ async def process_files(directory):
     print(f"average computation time : {round(elapsed_time / (len(files) * BATCH), 3)} sec")
 
 if __name__ == '__main__':
-    directory = './sat_inputs_small'
+    directory = './sat_inputs_large'
     asyncio.run(process_files(directory))

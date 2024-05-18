@@ -2,7 +2,7 @@ from solver import *
 import sys
 import os
 
-BATCH = 10
+BATCH = 1
 def read_cnf_from_file(filename):
     with open(filename, 'r') as file:
         comments = ""
@@ -22,7 +22,7 @@ def read_cnf_from_file(filename):
                 break
 
         Formula = []
-        for i in range(n-1):
+        for i in range(n):
             line = lines[i + comment_len]
             line = line.split(" ")
 

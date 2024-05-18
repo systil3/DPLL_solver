@@ -1,0 +1,25 @@
+naive, with restart, 59.93s
+opposite, with restart, 1535s
+greedy_size, with restart, 6.08s
+
+small set
+naive : 13.977
+greedy_size : 12.031
+opposite : 12.986
+
+normal set
+naive : 55.81
+greedy_size : 46.193
+opposite : 56.081
+
+------------ with stack unit propagation ------------------
+
+small set
+naive : 15.206
+greedy_size : 15.298
+opposite : 15.312
+
+normal set
+naive : 44.733
+greedy_size : 29.503
+opposite : 43.427
